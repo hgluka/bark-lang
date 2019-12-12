@@ -77,33 +77,43 @@ proc barkMinus(s: var State): Option[int] =
     s.error = "error"
     return none(int)
 
+proc barkHere(s: var State): Option[int] =
+  s.error = "ok"
+  return some(s.put(s.token_idx))
+
 proc barkBranch(s: var State): Option[int] =
+  let a: Option[int] = s.pop
   try:
     s.error = "ok"
-    s.token_idx = parseint(s.tokens[s.token_idx+1])-1
+    s.token_idx = a.get - 1
+    return some(a.get - 1)
   except ValueError:
     s.error = "error"
-    echo "Error: token following branch should be integer."
+    echo "Error: branch has nowhere to jump to."
     discard
 
 proc barkZeroBranch(s: var State): Option[int] =
   let a: Option[int] = s.pop
+  let b: Option[int] = s.pop
+  let c: Option[int] = s.pop
   if a.isSome:
     if a.get == 0:
-      try:
+      if b.isSome:
         s.error = "ok"
-        s.token_idx = parseint(s.tokens[s.token_idx+1])-1
-      except ValueError:
+        s.token_idx = b.get - 1
+        return some(b.get - 1)
+      else:
         s.error = "error"
-        echo "Error: tokens following branch? should be integers."
+        echo "Error: zero branch has nowhere to jump to."
         discard
     else:
-      try:
+      if c.isSome:
         s.error = "ok"
-        s.token_idx = parseInt(s.tokens[s.token_idx+2])-1
-      except ValueError:
+        s.token_idx = c.get - 1
+        return some(c.get - 1)
+      else:
         s.error = "error"
-        echo "Error: tokens following branch? should be integers."
+        echo "Error: zero branch has nowhere to jump to."
         discard
 
 proc barkHalt(s: var State): Option[int] =
@@ -139,6 +149,7 @@ proc barkStartCompile(s: var State): Option[int] =
 var dictionary = {"+":barkMakeCompatible(barkPlus),
                   "-":barkMakeCompatible(barkMinus),
                   "print":barkMakeCompatible(barkPrint),
+                  "here":barkMakeCompatible(barkHere),
                   "branch":barkMakeCompatible(barkBranch),
                   "branch?":barkMakeCompatible(barkZeroBranch),
                   "halt":barkMakeCompatible(barkHalt),
