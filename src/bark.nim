@@ -1,3 +1,4 @@
+{.experimental: "codeReordering".}
 import strutils
 import system
 import tables
@@ -12,9 +13,19 @@ type State* = object
   token_idx*: int
   stack*: seq[int]
   error: string
+  new_word*: seq[string]
+
+proc `empty`*(s: var State): State =
+  s.compile = false
+  s.tokens = @[]
+  s.token_idx = 0
+  s.stack = @[]
+  s.error = "ok"
+  s.new_word = @[]
+  return s
 
 proc `$`*(s: State): string =
-  return s.error & ": " & ($s.stack)[2..^2];
+  return s.error & ": " & ($s.stack)[2..^2]
 
 proc `peek`*(s: State): Option[int] =
   if s.stack.len > 0:
@@ -99,26 +110,72 @@ proc barkHalt(s: var State): Option[int] =
   GC_fullCollect()
   quit()
 
+proc barkMakeCompatible(f: proc (s: var State) : Option[int]): proc (s: var State): Option[int] {.closure.} =
+  return proc (s: var State): Option[int] {.closure.} =
+    return f(s)
 
-let dictionary = {"+":barkPlus,
-                  "-":barkMinus,
-                  "print":barkPrint,
-                  "branch":barkBranch,
-                  "branch?":barkZeroBranch,
-                  "halt":barkHalt}.toTable
+proc barkMakeWord(tokens: seq[string]): proc (s: var State): Option[int] {.closure.} =
+  var new_state: State
+  discard new_state.empty
+  new_state.tokens = tokens
+  return proc (s: var State): Option[int] {.closure.} =
+    new_state.stack = s.stack
+    barkRunProgram(new_state)
+    s.stack = new_state.stack
+    result = new_state.pop
+    discard new_state.empty
+    new_state.tokens = tokens
+    return result
+
+proc barkStartCompile(s: var State): Option[int] =
+  if not s.compile:
+    s.compile = true
+    return none(int)
+  else:
+    s.error = "error"
+    echo "Error: compile mode already started."
+    discard
+
+var dictionary = {"+":barkMakeCompatible(barkPlus),
+                  "-":barkMakeCompatible(barkMinus),
+                  "print":barkMakeCompatible(barkPrint),
+                  "branch":barkMakeCompatible(barkBranch),
+                  "branch?":barkMakeCompatible(barkZeroBranch),
+                  "halt":barkMakeCompatible(barkHalt),
+                  ":":barkMakeCompatible(barkStartCompile)}.toTable
+
+var immediate_words = @[":", ";"]
+
+proc barkEndCompile(s: var State): Option[int] =
+  if s.compile and len(s.new_word) != 0:
+    dictionary[s.new_word[0]] = barkMakeWord(s.new_word[1..^1])
+    s.compile = false
+    s.new_word = @[]
+    return none(int)
+  elif s.compile and len(s.new_word) == 0:
+    s.compile = false
+    return none(int)
+  else:
+    s.error = "error"
+    echo "Error: compile mode not started."
+
+dictionary[";"] = barkMakeCompatible(barkEndCompile) # this word is only special because it alters the dictionary
 
 proc barkNextTokenEffect(s: var State) =
   if s.token_idx >= s.tokens.len():
     return
-  if dictionary.hasKey(s.tokens[s.token_idx]):
-    discard dictionary[s.tokens[s.token_idx]](s)
+  if (not s.compile) or (immediate_words.find(s.tokens[s.token_idx]) != -1):
+    if dictionary.hasKey(s.tokens[s.token_idx]):
+      discard dictionary[s.tokens[s.token_idx]](s)
+    else:
+      try:
+        s.error = "ok"
+        discard s.put(parseInt(s.tokens[s.token_idx]))
+      except ValueError:
+        echo "Error: undefined word."
+        discard
   else:
-    try:
-      s.error = "ok"
-      discard s.put(parseInt(s.tokens[s.token_idx]))
-    except ValueError:
-      echo "Error: undefined word."
-      discard
+    s.new_word.add(s.tokens[s.token_idx])
   s.token_idx = s.token_idx + 1
 
 proc barkRunProgram(s: var State) =
@@ -137,20 +194,18 @@ Usage:
   bark (-v | --version)
 
 Options:
-  --help           Show this screen.
+  --help           Show this text.
   -v --version     Show version.
 """
   let args = docopt(doc, version = "bark 0.1.0")
 
 
   var state: State
-  state.tokens = @[]
-  state.token_idx = 0
-  state.stack = @[]
-  state.error = "ok"
+  discard state.empty
   var input_string: string
+  stdout.write "bark 0.1.0 by Luka Hadzi-Djokic"
   while true:
-    stdout.write "> "
+    stdout.write "\n> "
     var stdin_stream = newFileStream(stdin)
     input_string = stdin_stream.readLine
     state.tokens = @[]
@@ -158,5 +213,5 @@ Options:
     for token in input_string.splitWhitespace():
       state.tokens.add(token)
     barkRunProgram(state)
-    stdout.writeln $state
+    stdout.write $state
 
