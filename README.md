@@ -1,3 +1,4 @@
 ## Bark
 
-A minimal Forth implementation that will evolve in to a VM for a concatenative language that doesn't exist yet.
+Bark is a minimal concatenative stack-based language with types (not implemented yet).
+This is an interpreter for Bark written in Nim.

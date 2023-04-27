@@ -50,9 +50,11 @@ proc barkPlus(s: var State): Option[int] =
     return some(s.put(a.get + b.get))
   elif a.isSome and not b.isSome:
     s.error = "error"
+    echo "Error: only one operand on stack."
     return some(s.put(a.get))
   else:
     s.error = "error"
+    echo "Error: empty stack."
     return none(int)
 
 proc barkPrint(s: var State): Option[int] =
@@ -63,6 +65,7 @@ proc barkPrint(s: var State): Option[int] =
     return some(a.get)
   else:
     s.error = "error"
+    echo "Error: empty stack."
 
 proc barkMinus(s: var State): Option[int] =
   let a: Option[int] = s.pop
@@ -72,49 +75,129 @@ proc barkMinus(s: var State): Option[int] =
     return some(s.put(a.get - b.get))
   elif a.isSome and not b.isSome:
     s.error = "error"
+    echo "Error: only one operand on stack."
     return some(s.put(a.get))
   else:
     s.error = "error"
+    echo "Error: empty stack."
     return none(int)
 
 proc barkHere(s: var State): Option[int] =
   s.error = "ok"
   return some(s.put(s.token_idx))
 
-proc barkBranch(s: var State): Option[int] =
+proc barkJump(s: var State): Option[int] =
   let a: Option[int] = s.pop
-  try:
-    s.error = "ok"
-    s.token_idx = a.get - 1
-    return some(a.get - 1)
-  except ValueError:
+  if a.isSome:
+    try:
+      s.error = "ok"
+      s.token_idx = a.get - 1
+      return some(a.get - 1)
+    except ValueError:
+      s.error = "error"
+      echo "Error: jump address out of bounds."
+      discard
+  else:
     s.error = "error"
-    echo "Error: branch has nowhere to jump to."
+    echo "Error: empty stack"
     discard
 
-proc barkZeroBranch(s: var State): Option[int] =
+proc barkZeroJump(s: var State): Option[int] =
   let a: Option[int] = s.pop
   let b: Option[int] = s.pop
-  let c: Option[int] = s.pop
-  if a.isSome:
+  if a.isSome and b.isSome:
     if a.get == 0:
-      if b.isSome:
+      try:
         s.error = "ok"
         s.token_idx = b.get - 1
         return some(b.get - 1)
-      else:
+      except ValueError:
         s.error = "error"
-        echo "Error: zero branch has nowhere to jump to."
+        echo "Error: jump address out of bounds."
         discard
     else:
-      if c.isSome:
-        s.error = "ok"
-        s.token_idx = c.get - 1
-        return some(c.get - 1)
-      else:
-        s.error = "error"
-        echo "Error: zero branch has nowhere to jump to."
-        discard
+      s.error = "ok"
+      discard
+  else:
+    s.error = "error"
+    echo "Error: only one operand on stack."
+    discard
+
+proc barkDup(s: var State): Option[int] =
+  let a: Option[int] = s.peek
+  if a.isSome:
+    s.error = "ok"
+    return some(s.put(a.get))
+  else:
+    s.error = "error"
+    echo "Error: empty stack."
+    discard
+
+proc barkSwap(s: var State): Option[int] =
+  let a: Option[int] = s.pop
+  let b: Option[int] = s.pop
+  if a.isSome and b.isSome:
+    s.error = "ok"
+    discard s.put(a.get)
+    return some(s.put(b.get))
+  elif a.isSome and not b.isSome:
+    s.error = "error"
+    echo "Error: only one operand on stack."
+    return some(s.put(a.get))
+  else:
+    s.error = "error"
+    echo "Error: empty stack."
+    discard
+    
+proc barkDrop(s: var State): Option[int] =
+  let a: Option[int] = s.pop
+  if a.isSome:
+    s.error = "ok"
+    return a
+  else:
+    s.error = "error"
+    echo "Error: empty stack."
+    discard
+
+proc barkOver(s: var State): Option[int] =
+  let a: Option[int] = s.pop
+  let b: Option[int] = s.peek
+  if a.isSome and b.isSome:
+    s.error = "ok"
+    discard s.put(a.get)
+    return some(s.put(b.get))
+  elif a.isSome and not b.isSome:
+    s.error = "error"
+    echo "Error: only one operand on stack."
+    return some(s.put(a.get))
+  else:
+    s.error = "error"
+    echo "Error: empty stack."
+    discard
+
+proc barkRot(s: var State): Option[int] =
+  let a: Option[int] = s.pop
+  let b: Option[int] = s.pop
+  let c: Option[int] = s.pop
+  if a.isSome and b.isSome and c.isSome:
+    s.error = "ok"
+    discard s.put(b.get)
+    discard s.put(a.get)
+    return some(s.put(c.get))
+  elif a.isSome and b.isSome and not c.isSome:
+    s.error = "error"
+    echo "Error: only two operands on stack.
+    discard s.put(b.get)
+    return some(s.put(a.get))
+  elif a.isSome and not b.isSome:
+    s.error = "error"
+    echo "Error: only one operand on stack."
+    return some(s.put(a.get))
+  else:
+    s.error = "error"
+    echo "Error: empty stack."
+    discard
+
 
 proc barkHalt(s: var State): Option[int] =
   GC_fullCollect()
@@ -134,7 +217,7 @@ proc barkMakeWord(tokens: seq[string]): proc (s: var State): Option[int] {.closu
     s.stack = new_state.stack
     result = new_state.pop
     discard new_state.empty
-    new_state.tokens = tokens
+    # new_state.tokens = tokens
     return result
 
 proc barkStartCompile(s: var State): Option[int] =
@@ -150,8 +233,12 @@ var dictionary = {"+":barkMakeCompatible(barkPlus),
                   "-":barkMakeCompatible(barkMinus),
                   "print":barkMakeCompatible(barkPrint),
                   "here":barkMakeCompatible(barkHere),
-                  "branch":barkMakeCompatible(barkBranch),
-                  "branch?":barkMakeCompatible(barkZeroBranch),
+                  "jump":barkMakeCompatible(barkJump),
+                  "jump?":barkMakeCompatible(barkZeroJump),
+                  "dup":barkMakeCompatible(barkDup),
+                  "swap":barkMakeCompatible(barkSwap),
+                  "drop":barkMakeCompatible(barkDrop),
+                  "over":barkMakeCompatible(barkOver),
                   "halt":barkMakeCompatible(barkHalt),
                   ":":barkMakeCompatible(barkStartCompile)}.toTable
 
@@ -183,6 +270,7 @@ proc barkNextTokenEffect(s: var State) =
         s.error = "ok"
         discard s.put(parseInt(s.tokens[s.token_idx]))
       except ValueError:
+        s.error = "error"
         echo "Error: undefined word."
         discard
   else:
